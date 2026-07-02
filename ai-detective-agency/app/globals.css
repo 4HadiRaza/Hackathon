@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CSS Custom Properties — Detective Noir Design System
+   ============================================================ */
+:root {
+  --background: #211a19;
+  --foreground: #f5f3f0;
+
+  /* Noir palette tokens */
+  --noir-50:  #f5f3f0;
+  --noir-100: #e8e4de;
+  --noir-200: #d1c9be;
+  --noir-300: #b5a899;
+  --noir-400: #9a8877;
+  --noir-500: #856e5e;
+  --noir-600: #6e5a4e;
+  --noir-700: #584742;
+  --noir-800: #493b38;
+  --noir-900: #3e3231;
+  --noir-950: #211a19;
+
+  /* Accent tokens */
+  --amber:    #f59e0b;
+  --crimson:  #dc143c;
+
+  /* Spacing & radius */
+  --radius-sm:  0.375rem;
+  --radius-md:  0.75rem;
+  --radius-lg:  1rem;
+  --radius-xl:  1.5rem;
+  --radius-2xl: 2rem;
+
+  /* Shadows */
+  --shadow-glow-amber: 0 0 20px rgba(245, 158, 11, 0.15);
+  --shadow-glow-crimson: 0 0 20px rgba(220, 20, 60, 0.15);
+}
+
+/* ============================================================
+   Base Styles
+   ============================================================ */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    color: var(--foreground);
+    background: var(--background);
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--noir-950);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--noir-700);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--noir-500);
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(245, 158, 11, 0.3);
+    color: var(--noir-50);
+  }
+
+  /* Focus ring */
+  *:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* ============================================================
+   Component Utilities
+   ============================================================ */
+@layer components {
+  /* Glass morphism card */
+  .glass {
+    background: rgba(73, 59, 56, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(181, 168, 153, 0.1);
+  }
+
+  /* Noir card */
+  .card-noir {
+    background: var(--noir-900);
+    border: 1px solid var(--noir-700);
+    border-radius: var(--radius-xl);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-noir:hover {
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: var(--shadow-glow-amber);
+  }
+
+  /* Amber glow text */
+  .text-glow-amber {
+    text-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+  }
+
+  /* Noise texture overlay */
+  .noise::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* Chat bubble styles */
+  .bubble-user {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: var(--noir-950);
+    border-radius: 18px 18px 4px 18px;
+  }
+  .bubble-agent {
+    background: var(--noir-800);
+    border: 1px solid var(--noir-700);
+    color: var(--noir-100);
+    border-radius: 18px 18px 18px 4px;
+  }
+}
+
+/* ============================================================
+   Utility Overrides
+   ============================================================ */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-in {
+    animation: fadeSlideUp 0.3s ease-out both;
+  }
+
+  @keyframes fadeSlideUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Typing indicator dots */
+  .typing-dot {
+    animation: typingBounce 1.4s ease-in-out infinite;
+  }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes typingBounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30%            { transform: translateY(-6px); opacity: 1; }
+  }
+}
