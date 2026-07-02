@@ -38,9 +38,11 @@ function getClient(): GoogleGenerativeAI {
 // ─────────────────────────────────────────────
 
 /** Primary model used across the entire agent pipeline. */
-export const DEFAULT_MODEL = "gemini-2.0-flash" as const;
+export const DEFAULT_MODEL = "gemini-3.5-flash" as const;
 
 export type SupportedModel =
+  | "gemini-3.5-flash"
+  | "gemini-2.5-flash"
   | "gemini-2.0-flash"
   | "gemini-2.0-flash-lite"
   | "gemini-1.5-flash"
@@ -266,6 +268,46 @@ export const ACCUSATION_RESULT_SCHEMA: ResponseSchema = {
     },
   },
   required: ["accusedSuspect", "caseSummary", "confidence", "reasoning"],
+};
+
+/** JSON Schema for Case (used to parse unstructured text cases) */
+export const CASE_STRUCTURED_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    title: { type: SchemaType.STRING, description: "Short catchy title of the case" },
+    summary: { type: SchemaType.STRING, description: "A detailed one-paragraph summary of the incident and what occurred" },
+    suspects: {
+      type: SchemaType.ARRAY,
+      description: "List of suspects found in the text. Make sure to extract at least 2-4 suspects if mentioned.",
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          name: { type: SchemaType.STRING },
+          alibi: { type: SchemaType.STRING, description: "The suspect's stated alibi or whereabouts" },
+          motive: { type: SchemaType.STRING, description: "The suspect's potential motivation for committing the crime" },
+          statement: { type: SchemaType.STRING, description: "The suspect's verbatim or summarized statement" }
+        },
+        required: ["name", "alibi", "motive", "statement"]
+      }
+    },
+    evidence: {
+      type: SchemaType.ARRAY,
+      description: "List of evidence items described in the text.",
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          type: { 
+            type: SchemaType.STRING, 
+            description: "Category of evidence: physical, digital, testimony, document, forensic, financial, surveillance" 
+          },
+          description: { type: SchemaType.STRING, description: "Details of what this evidence is and what it reveals" },
+          source: { type: SchemaType.STRING, description: "Where or from whom this evidence was recovered" }
+        },
+        required: ["type", "description", "source"]
+      }
+    }
+  },
+  required: ["title", "summary", "suspects", "evidence"]
 };
 
 

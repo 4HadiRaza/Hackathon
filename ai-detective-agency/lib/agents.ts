@@ -23,6 +23,7 @@ import {
   CLUE_RESULT_SCHEMA,
   INTERROGATION_RESULT_SCHEMA,
   ACCUSATION_RESULT_SCHEMA,
+  CASE_STRUCTURED_SCHEMA,
 } from "@/lib/gemini";
 
 import type { ChatSession } from "@google/generative-ai";
@@ -334,6 +335,57 @@ export async function makeAccusation(
       temperature: 0.4,
     }
   );
+}
+
+const PARSE_SYSTEM =
+  "You are Archie — the meticulous archivist at the AI Detective Agency. " +
+  "Your task is to analyze a messy, unstructured text description of a mystery crime scene, suspect accounts, and evidence clues, " +
+  "and organize it into a structured Case JSON format. " +
+  "Extract all identified suspects, their stated alibis, motives, and statements. " +
+  "Extract all evidence items and categorise them (physical, digital, testimony, document, forensic, financial, surveillance). " +
+  "If information is messy or incomplete, do not fail. Interpolate safe defaults, and summarize the gaps in the summary field. " +
+  "Do not invent entirely new characters, but structure what is there.";
+
+export async function parseUnstructuredCase(rawText: string): Promise<Case> {
+  const prompt = [
+    "# UNSTRUCTURED CASE TEXT",
+    rawText,
+    "",
+    "# TASK",
+    "Parse the case text and extract the structured Title, Summary, Suspects, and Evidence items.",
+    "Return a valid Case JSON object matching the schema."
+  ].join("\n");
+
+  try {
+    const parsed = await callGeminiStructured<Omit<Case, "id" | "status" | "createdAt" | "updatedAt">>(
+      prompt,
+      CASE_STRUCTURED_SCHEMA,
+      {
+        systemInstruction: PARSE_SYSTEM,
+        temperature: 0.3
+      }
+    );
+
+    return {
+      id: `custom_${Date.now()}`,
+      ...parsed,
+      status: "open",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    console.error("[parseUnstructuredCase] Failed parsing custom case:", err);
+    return {
+      id: `custom_${Date.now()}`,
+      title: "Messy Custom Case File",
+      summary: `Failed to structure custom input: ${err instanceof Error ? err.message : String(err)}. Proceeding with raw data analysis.`,
+      suspects: [],
+      evidence: [],
+      status: "open",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
 }
 
 // ─────────────────────────────────────────────

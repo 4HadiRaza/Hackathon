@@ -13,6 +13,7 @@ export interface CaseLogEntry {
   confidence: string;
   summary: string;
   timestamp: string;
+  isCustom?: boolean;
 }
 
 // Persist in-memory logs across Next.js dev server hot-reloads using global scope

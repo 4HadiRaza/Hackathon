@@ -32,12 +32,13 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { caseId, caseTitle, accusedSuspect, confidence, summary } = body as {
+    const { caseId, caseTitle, accusedSuspect, confidence, summary, isCustom } = body as {
       caseId: string;
       caseTitle: string;
       accusedSuspect: string;
       confidence: string;
       summary: string;
+      isCustom?: boolean;
     };
 
     if (!caseId || !caseTitle || !accusedSuspect || !confidence || !summary) {
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
       accusedSuspect,
       confidence,
       summary,
+      isCustom,
     });
 
     return createApiSuccess(logEntry, 201);

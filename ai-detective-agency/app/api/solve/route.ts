@@ -3,21 +3,26 @@
 // POST /api/solve — runs the pipeline on multiple cases
 // Concurrency limit: max 3 parallel runs
 // Requires active NextAuth session
+// Supports both structured Cases and rawText custom cases.
 // ============================================================
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { runDetectivePipeline, PipelineOutput } from "@/lib/agents";
+import { runDetectivePipeline, parseUnstructuredCase } from "@/lib/agents";
 import { MOCK_CASES } from "@/lib/mockCases";
 import { createApiError, createApiSuccess } from "@/lib/utils";
 import type { Case } from "@/types";
 
 export const maxDuration = 120; // 2 minutes since we may run multiple Gemini calls
 
+type InputCase = Case & { rawText?: string };
+
 interface SolveRequestBody {
   caseIds?: string[];
-  cases?: Case[];
+  cases?: InputCase[];
+  rawText?: string;
+  isCustom?: boolean;
 }
 
 /** Simple queue/semaphore worker pool for concurrency control. */
@@ -44,7 +49,6 @@ async function runWithConcurrencyLimit<T, R>(
     }
   }
 
-  // Launch parallel worker loops up to the concurrency limit
   const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
   await Promise.all(workers);
   return results;
@@ -68,16 +72,29 @@ export async function POST(req: NextRequest) {
 
     const caseIds = body.caseIds ?? [];
     const fullCases = body.cases ?? [];
+    const singleRawText = body.rawText;
 
-    if (!caseIds.length && !fullCases.length) {
+    if (!caseIds.length && !fullCases.length && !singleRawText) {
       return createApiError(
-        "Request must provide either an array of 'caseIds' or an array of 'cases'.",
+        "Request must provide 'caseIds', 'cases', or a single 'rawText' string.",
         400
       );
     }
 
-    // Resolve all case files to investigate
-    const casesToSolve: Case[] = [];
+    // Resolve all case files/inputs to investigate
+    const casesToSolve: InputCase[] = [];
+
+    // Add single rawText case if provided at root level
+    if (singleRawText && typeof singleRawText === "string") {
+      casesToSolve.push({
+        id: `custom_${Date.now()}`,
+        title: "Custom Case",
+        summary: "",
+        suspects: [],
+        evidence: [],
+        rawText: singleRawText,
+      });
+    }
 
     // Resolve case IDs from mock store
     for (const id of caseIds) {
@@ -85,24 +102,39 @@ export async function POST(req: NextRequest) {
       if (!matched) {
         return createApiError(`Case ID "${id}" could not be found in active records.`, 404);
       }
-      casesToSolve.push(matched);
+      // clone to avoid mutating mock store
+      casesToSolve.push({ ...matched });
     }
 
-    // Add any inline cases provided directly
+    // Add any inline cases
     for (const c of fullCases) {
-      if (!c.title || !c.summary) {
-        return createApiError("All cases in the list must contain a 'title' and 'summary'.", 400);
+      if (!c.rawText && (!c.title || !c.summary)) {
+        return createApiError(
+          "All cases in the list must contain a 'title' and 'summary', or a 'rawText' string.",
+          400
+        );
       }
       casesToSolve.push(c);
     }
 
     // ── 3. Run pipeline in parallel (limit = 3) ──────────────────────────────
     const batchStart = Date.now();
-    const results = await runWithConcurrencyLimit(3, casesToSolve, async (caseFile) => {
+    const results = await runWithConcurrencyLimit(3, casesToSolve, async (caseInput) => {
+      let caseFile: Case = caseInput;
+      let wasParsed = false;
+
+      // Pre-process custom rawText cases using the archivist parser
+      if (caseInput.rawText) {
+        caseFile = await parseUnstructuredCase(caseInput.rawText);
+        wasParsed = true;
+      }
+
       const pipelineOutput = await runDetectivePipeline(caseFile);
+      
       return {
         caseId: caseFile.id,
         title: caseFile.title,
+        isCustom: wasParsed,
         ...pipelineOutput,
       };
     });

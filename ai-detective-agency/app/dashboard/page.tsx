@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [isSolving, setIsSolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customText, setCustomText] = useState("");
   
   // Simulated step-by-step pipeline state (gives "detective thinking out loud" vibe)
   const [currentStep, setCurrentStep] = useState<0 | 1 | 2 | 3>(0); // 0 = idle/loading API, 1 = clues, 2 = interrogation, 3 = accusation
@@ -100,11 +101,59 @@ export default function DashboardPage() {
       setAccusationData(data.result);
 
       // Begin the simulated step-by-step presentation
-      await runDetectiveShow(data.clues, data.interrogation, data.result, caseFile);
+      await runDetectiveShow(data.clues, data.interrogation, data.result, caseFile, false);
 
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Investigation failed.");
+      setIsSolving(false);
+    }
+  };
+
+  // Trigger the pipeline solve for custom unstructured case
+  const handleSolveCustomCase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customText.trim()) return;
+
+    resetSolver();
+    setIsSolving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/pipeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText: customText }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to parse and solve custom case: ${response.statusText}`);
+      }
+
+      const body = await response.json();
+      if (!body.success) {
+        throw new Error(body.error ?? "Failed solving case");
+      }
+
+      const data = body.data;
+      const parsedCase = data.caseFile;
+
+      // Update UI case states with parsed structured content
+      setSelectedCase(parsedCase);
+      setPipelineTrace(data.trace);
+      setCluesData(data.clues);
+      setInterrogationData(data.interrogation);
+      setAccusationData(data.result);
+      
+      // Make sure we show the solved board tab
+      setActiveTab("board");
+
+      // Run sequential animations
+      await runDetectiveShow(data.clues, data.interrogation, data.result, parsedCase, true);
+
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Unstructured case analysis failed.");
       setIsSolving(false);
     }
   };
@@ -114,7 +163,8 @@ export default function DashboardPage() {
     clues: ClueResult,
     interrogation: InterrogationResult,
     accusation: AccusationResult,
-    caseFile: Case
+    caseFile: Case,
+    isCustomCase = false
   ) => {
     // --- Step 1: Gather Clues ---
     setCurrentStep(1);
@@ -167,6 +217,7 @@ export default function DashboardPage() {
           accusedSuspect: accusation.accusedSuspect,
           confidence: accusation.confidence,
           summary: accusation.caseSummary,
+          isCustom: isCustomCase,
         }),
       });
       fetchCaseLogs();
@@ -241,6 +292,37 @@ export default function DashboardPage() {
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Custom Case Folder Button */}
+            <div
+              onClick={() => {
+                if (isSolving) return;
+                setSelectedCase({
+                  id: "custom_draft",
+                  title: "Custom Case",
+                  summary: "",
+                  suspects: [],
+                  evidence: [],
+                });
+                setActiveTab("board");
+                resetSolver();
+              }}
+              className={`p-4 rounded-xl border border-dashed text-left cursor-pointer transition-all duration-200 ${
+                selectedCase?.id === "custom_draft"
+                  ? "border-amber-400 bg-amber-500/5 text-amber-400"
+                  : "border-[#584742]/50 hover:border-amber-400/40 text-[#9a8877] hover:text-[#f5f3f0]"
+              } ${isSolving ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <span>➕</span>
+                <span>Create Custom Case</span>
+              </div>
+              <p className="text-[10px] text-[#6e5a4e] mt-1">
+                Type an unstructured case files text to run the AI pipeline.
+              </p>
+            </div>
+
+            <div className="h-px bg-[#584742]/20 my-2" />
+
             {MOCK_CASES.map((c) => {
               const isSelected = selectedCase?.id === c.id;
               return (
@@ -318,9 +400,16 @@ export default function DashboardPage() {
                       <span className="absolute top-4 right-6 text-xs font-mono text-[#6e5a4e]">
                         {new Date(log.timestamp).toLocaleString()}
                       </span>
-                      <span className="px-2 py-0.5 bg-red-950/40 text-red-400 border border-red-500/30 text-[10px] uppercase font-mono rounded">
-                        ARREST LOGGED · {log.confidence} confidence
-                      </span>
+                      <div className="flex gap-2 items-center">
+                        <span className="px-2 py-0.5 bg-red-950/40 text-red-400 border border-red-500/30 text-[10px] uppercase font-mono rounded">
+                          ARREST LOGGED · {log.confidence} confidence
+                        </span>
+                        {log.isCustom && (
+                          <span className="px-2 py-0.5 bg-amber-950/40 text-amber-400 border border-amber-500/30 text-[10px] uppercase font-mono rounded font-semibold">
+                            Custom Case
+                          </span>
+                        )}
+                      </div>
                       
                       <h3 className="text-xl font-bold mt-3 text-amber-400 font-mono">
                         {log.caseTitle}
@@ -347,31 +436,81 @@ export default function DashboardPage() {
             <div className="flex-1 flex flex-col overflow-hidden relative z-10">
               
               {/* Case Toolbar */}
-              <div className="h-12 border-b border-[#584742]/30 bg-[#2d1e1c]/80 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
-                <span className="font-bold text-[#f5f3f0] tracking-wide font-mono">
-                  📂 BOARD: {selectedCase.title}
-                </span>
-
-                <div className="flex bg-[#1c1514] p-1 rounded-lg border border-[#584742]/30">
-                  {(["board", "evidence", "suspects"] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider transition-all ${
-                        activeTab === tab
-                          ? "bg-amber-500 text-noir-950 font-bold"
-                          : "text-[#9a8877] hover:text-[#f5f3f0]"
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
+              {selectedCase.id === "custom_draft" ? (
+                <div className="h-12 border-b border-[#584742]/30 bg-[#2d1e1c]/80 backdrop-blur-sm flex items-center px-6 shrink-0 font-mono font-bold text-[#f5f3f0]">
+                  📂 CUSTOM CASE CREATOR
                 </div>
-              </div>
+              ) : (
+                <div className="h-12 border-b border-[#584742]/30 bg-[#2d1e1c]/80 backdrop-blur-sm flex items-center justify-between px-6 shrink-0">
+                  <span className="font-bold text-[#f5f3f0] tracking-wide font-mono">
+                    📂 BOARD: {selectedCase.title}
+                  </span>
+
+                  <div className="flex bg-[#1c1514] p-1 rounded-lg border border-[#584742]/30">
+                    {(["board", "evidence", "suspects"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`px-3 py-1 rounded-md text-xs font-semibold uppercase tracking-wider transition-all ${
+                          activeTab === tab
+                            ? "bg-amber-500 text-noir-950 font-bold"
+                            : "text-[#9a8877] hover:text-[#f5f3f0]"
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Corkboard Main Area */}
               <div className="flex-1 overflow-y-auto p-8">
-                {activeTab === "board" ? (
+                {selectedCase.id === "custom_draft" ? (
+                  // Custom unstructured case briefing input form
+                  <div className="max-w-2xl mx-auto bg-[#2d2220] border border-[#584742] rounded-3xl p-8 shadow-2xl relative animate-in">
+                    <div className="absolute -top-3 left-6 px-3 py-1 bg-amber-500 text-[#211a19] text-[10px] font-mono font-bold tracking-widest uppercase rounded shadow">
+                      Archivist Desk
+                    </div>
+                    
+                    <h3 className="text-xl font-bold mb-2">Write/Paste Unstructured Case File</h3>
+                    <p className="text-xs text-[#9a8877] mb-6">
+                      Describe the incident, name the suspects, detail their alibis, statements, or any clues recovered. The AI Archivist agent will parse it into a structured dossier before solving.
+                    </p>
+
+                    <form onSubmit={handleSolveCustomCase} className="space-y-6">
+                      <div>
+                        <label htmlFor="custom-case-text" className="block text-xs uppercase tracking-wider text-[#6e5a4e] mb-2 font-mono font-bold">
+                          Unstructured Briefing Text
+                        </label>
+                        <textarea
+                          id="custom-case-text"
+                          rows={12}
+                          value={customText}
+                          onChange={(e) => setCustomText(e.target.value)}
+                          placeholder="Example: A diamond ring was stolen from Lady Sarah's desk around midnight. The butler Jenkins claims he was polishing silver downstairs, while the cook Mary says she was asleep in her room. However, jenkins' footprint matches the mud found near the desk..."
+                          className="w-full px-4 py-3 rounded-xl bg-[#1c1514] border border-[#584742] text-[#f5f3f0] placeholder-[#584742] focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-mono text-xs leading-relaxed"
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSolving || !customText.trim()}
+                        className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-amber-500/20 text-[#211a19] font-bold text-base transition-all duration-200 shadow-lg shadow-amber-500/10 hover:shadow-amber-500/30 flex items-center justify-center gap-2"
+                      >
+                        {isSolving ? (
+                          <>
+                            <span className="w-4 h-4 border-2 border-[#211a19] border-t-transparent rounded-full animate-spin" />
+                            Parsing Dossier...
+                          </>
+                        ) : (
+                          "Solve This Custom Case"
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                ) : activeTab === "board" ? (
                   <div className="space-y-8 max-w-5xl mx-auto">
                     
                     {/* Error Display */}
