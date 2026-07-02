@@ -10,6 +10,7 @@ import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { MOCK_CASES } from "@/lib/mockCases";
 import type { Case, ClueResult, InterrogationResult, AccusationResult, AgentTraceStep } from "@/types";
+import type { CaseLogEntry } from "@/lib/caseLog";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -30,7 +31,31 @@ export default function DashboardPage() {
   const [revealedCluesCount, setRevealedCluesCount] = useState(0);
   const [suspicionScores, setSuspicionScores] = useState<Record<string, number>>({});
   const [typewriterText, setTypewriterText] = useState("");
-  const [activeTab, setActiveTab] = useState<"board" | "evidence" | "suspects">("board");
+  const [activeTab, setActiveTab] = useState<"board" | "evidence" | "suspects" | "archive">("board");
+  
+  // Closed Case log state
+  const [caseLogs, setCaseLogs] = useState<CaseLogEntry[]>([]);
+
+  // Load Case logs
+  const fetchCaseLogs = async () => {
+    try {
+      const res = await fetch("/api/actions");
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success) {
+          setCaseLogs(body.data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed loading case logs:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchCaseLogs();
+    }
+  }, [status]);
 
   // Reset solver state
   const resetSolver = () => {
@@ -75,7 +100,7 @@ export default function DashboardPage() {
       setAccusationData(data.result);
 
       // Begin the simulated step-by-step presentation
-      runDetectiveShow(data.clues, data.interrogation, data.result);
+      await runDetectiveShow(data.clues, data.interrogation, data.result, caseFile);
 
     } catch (err) {
       console.error(err);
@@ -88,7 +113,8 @@ export default function DashboardPage() {
   const runDetectiveShow = async (
     clues: ClueResult,
     interrogation: InterrogationResult,
-    accusation: AccusationResult
+    accusation: AccusationResult,
+    caseFile: Case
   ) => {
     // --- Step 1: Gather Clues ---
     setCurrentStep(1);
@@ -129,16 +155,32 @@ export default function DashboardPage() {
     setTypewriterText("");
     await simulateTypewriter(accusation.reasoning);
     setIsSolving(false);
+
+    // Automatically append solved result to Case Log
+    try {
+      await fetch("/api/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: caseFile.id,
+          caseTitle: caseFile.title,
+          accusedSuspect: accusation.accusedSuspect,
+          confidence: accusation.confidence,
+          summary: accusation.caseSummary,
+        }),
+      });
+      fetchCaseLogs();
+    } catch (e) {
+      console.error("Failed to append case log entry:", e);
+    }
   };
 
   const simulateTypewriter = async (text: string) => {
-    // Type out the reasoning field character by character (or words for speed)
     const words = text.split(" ");
     let current = "";
     for (let i = 0; i < words.length; i++) {
       current += (i === 0 ? "" : " ") + words[i];
       setTypewriterText(current);
-      // Adaptive speed: faster for long texts
       await delay(Math.max(20, 100 - words.length));
     }
   };
@@ -188,8 +230,14 @@ export default function DashboardPage() {
         
         {/* ── Left Sidebar: Case file browser ── */}
         <aside className="w-80 border-r border-[#584742]/40 bg-[#1c1514] flex flex-col shrink-0">
-          <div className="p-4 border-b border-[#584742]/20 bg-[#16100f]">
+          <div className="p-4 border-b border-[#584742]/20 bg-[#16100f] flex justify-between items-center">
             <h2 className="text-xs font-bold uppercase tracking-wider text-[#9a8877]">Active Case Folders</h2>
+            <button 
+              onClick={() => setActiveTab("archive")}
+              className="text-xs text-amber-400 hover:underline"
+            >
+              Logs ({caseLogs.length})
+            </button>
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -201,10 +249,11 @@ export default function DashboardPage() {
                   onClick={() => {
                     if (isSolving) return;
                     setSelectedCase(c);
+                    setActiveTab("board");
                     resetSolver();
                   }}
                   className={`p-4 rounded-xl border text-left cursor-pointer transition-all duration-200 ${
-                    isSelected
+                    isSelected && activeTab !== "archive"
                       ? "border-amber-400/60 bg-[#2a1f1d] shadow-lg shadow-amber-400/5"
                       : "border-[#493b38]/50 bg-[#251b1a]/40 hover:border-[#584742] hover:bg-[#251b1a]/80"
                   } ${isSolving ? "opacity-60 cursor-not-allowed" : ""}`}
@@ -251,7 +300,50 @@ export default function DashboardPage() {
           {/* Corkboard Overlay shadow */}
           <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_80px_rgba(0,0,0,0.85)] z-10" />
 
-          {selectedCase ? (
+          {activeTab === "archive" ? (
+            // ── Case Log Tab View ──
+            <div className="flex-1 flex flex-col overflow-hidden relative z-10">
+              <div className="h-12 border-b border-[#584742]/30 bg-[#2d1e1c]/80 backdrop-blur-sm flex items-center px-6 shrink-0">
+                <span className="font-bold text-[#f5f3f0] tracking-wide font-mono">
+                  📓 ARCHIVE: Closed Cases & Arrest Records
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full">
+                <div className="space-y-6">
+                  {caseLogs.map((log) => (
+                    <div 
+                      key={log.id} 
+                      className="bg-[#2d2220] border border-[#584742] rounded-2xl p-6 shadow-xl relative animate-in"
+                    >
+                      <span className="absolute top-4 right-6 text-xs font-mono text-[#6e5a4e]">
+                        {new Date(log.timestamp).toLocaleString()}
+                      </span>
+                      <span className="px-2 py-0.5 bg-red-950/40 text-red-400 border border-red-500/30 text-[10px] uppercase font-mono rounded">
+                        ARREST LOGGED · {log.confidence} confidence
+                      </span>
+                      
+                      <h3 className="text-xl font-bold mt-3 text-amber-400 font-mono">
+                        {log.caseTitle}
+                      </h3>
+                      <p className="text-sm font-semibold text-[#f5f3f0] mt-2">
+                        Accused: <span className="text-red-400">{log.accusedSuspect}</span>
+                      </p>
+                      
+                      <div className="mt-4 p-4 rounded-xl bg-[#1c1514] border border-[#493b38]/50 text-xs text-[#b5a899] font-detective italic">
+                        &ldquo;{log.summary}&rdquo;
+                      </div>
+                    </div>
+                  ))}
+
+                  {caseLogs.length === 0 && (
+                    <div className="text-center p-12 text-[#9a8877] font-mono">
+                      No cases solved yet. Click "Solve Case" on any folder to open the file.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : selectedCase ? (
             <div className="flex-1 flex flex-col overflow-hidden relative z-10">
               
               {/* Case Toolbar */}
@@ -427,7 +519,6 @@ export default function DashboardPage() {
                           const isAccused = accusationData?.accusedSuspect === s.name;
                           const score = suspicionScores[s.name] ?? 0;
                           
-                          // Custom rotation to give string-board look
                           const rotations = ["-rotate-1", "rotate-2", "-rotate-2", "rotate-1"];
                           const rot = rotations[idx % rotations.length];
 
@@ -440,7 +531,6 @@ export default function DashboardPage() {
                                   : "border-[#493b38] bg-[#1e1514]"
                               }`}
                             >
-                              {/* Pushpin indicator */}
                               <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-2xl select-none z-10 drop-shadow">
                                 📍
                               </div>
@@ -464,7 +554,6 @@ export default function DashboardPage() {
                                 </div>
                               </div>
 
-                              {/* Suspense / Suspicion Score Meter */}
                               {currentStep >= 2 && (
                                 <div className="mt-6 pt-4 border-t border-[#584742]/30">
                                   <div className="flex justify-between items-center text-xs mb-1">
