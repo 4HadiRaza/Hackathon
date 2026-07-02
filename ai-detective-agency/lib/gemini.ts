@@ -38,7 +38,7 @@ function getClient(): GoogleGenerativeAI {
 // ─────────────────────────────────────────────
 
 /** Primary model used across the entire agent pipeline. */
-export const DEFAULT_MODEL = "gemini-3.5-flash" as const;
+export const DEFAULT_MODEL = "gemini-2.5-flash" as const;
 
 export type SupportedModel =
   | "gemini-3.5-flash"
@@ -142,11 +142,35 @@ export async function callGeminiStructured<T>(
     generationConfig,
   });
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-  });
+  let result = null;
+  let retries = 3;
+  let delayMs = 1000;
 
-  const rawText = result.response.text().trim();
+  while (retries > 0) {
+    try {
+      result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+      break;
+    } catch (err) {
+      retries--;
+      if (retries === 0) {
+        throw err;
+      }
+      console.warn(
+        `[Gemini API] generateContent failed, retrying in ${delayMs}ms. Retries remaining: ${retries}. Error:`,
+        err instanceof Error ? err.message : err
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      delayMs *= 2;
+    }
+  }
+
+  if (!result) {
+    throw new Error("Gemini API returned empty response after retries.");
+  }
+
+  const rawText = (result as any).response.text().trim();
 
   // ── Parse with fallback ──────────────────────────────────────────────────
 
