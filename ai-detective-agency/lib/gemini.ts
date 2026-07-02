@@ -38,10 +38,11 @@ function getClient(): GoogleGenerativeAI {
 // ─────────────────────────────────────────────
 
 /** Primary model used across the entire agent pipeline. */
-export const DEFAULT_MODEL = "gemini-2.5-flash" as const;
+export const DEFAULT_MODEL = "gemini-3.1-flash-lite" as const;
 
 export type SupportedModel =
   | "gemini-3.5-flash"
+  | "gemini-3.1-flash-lite"
   | "gemini-2.5-flash"
   | "gemini-2.0-flash"
   | "gemini-2.0-flash-lite"
